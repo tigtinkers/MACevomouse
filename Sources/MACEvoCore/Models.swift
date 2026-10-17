@@ -270,8 +270,11 @@ public struct MACEvoConfiguration: Codable, Equatable, Sendable {
             throw ConfigurationError.invalidConfiguration("profile ids must be present and unique")
         }
         for profile in profiles {
-            guard profile.scroll.verticalMultiplier >= 0, profile.scroll.horizontalMultiplier >= 0 else {
-                throw ConfigurationError.invalidConfiguration("scroll multipliers must not be negative")
+            guard profile.scroll.verticalMultiplier.isFinite,
+                  profile.scroll.horizontalMultiplier.isFinite,
+                  profile.scroll.verticalMultiplier >= 0,
+                  profile.scroll.horizontalMultiplier >= 0 else {
+                throw ConfigurationError.invalidConfiguration("scroll multipliers must be finite and non-negative")
             }
         }
     }

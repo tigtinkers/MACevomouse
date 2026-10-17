@@ -16,11 +16,14 @@ public struct RuleEngine: Sendable {
 
     public mutating func process(_ event: InputEvent) throws -> [ActionIntent] {
         try event.validate()
-        var intents = recoverStaleHolds(at: event.timestampMicros)
         if let lastTimestampMicros, event.timestampMicros < lastTimestampMicros {
-            intents.append(diagnostic(event, "out-of-order-timestamp"))
+            // Applying late state transitions can create a false chord or leave a
+            // button latched. Future adapters should provide a monotonic stream;
+            // until then this conservative core records and ignores late input.
+            return [diagnostic(event, "out-of-order-timestamp-ignored")]
         }
-        lastTimestampMicros = max(lastTimestampMicros ?? 0, event.timestampMicros)
+        var intents = recoverStaleHolds(at: event.timestampMicros)
+        lastTimestampMicros = event.timestampMicros
 
         if event.kind == .applicationActivated {
             let next = event.applicationBundleID!
@@ -103,9 +106,16 @@ public struct RuleEngine: Sendable {
         }
         let multiplier = axis == .vertical ? profile.scroll.verticalMultiplier : profile.scroll.horizontalMultiplier
         let reversed = axis == .vertical ? profile.scroll.reverseVertical : profile.scroll.reverseHorizontal
-        let signedDelta = reversed ? -event.delta! : event.delta!
-        let scaledDelta = Int((Double(signedDelta) * multiplier).rounded())
+        let signedMultiplier = reversed ? -multiplier : multiplier
+        let scaledDelta = boundedRoundedDelta(event.delta!, multiplier: signedMultiplier)
         return ActionIntent(timestampMicros: event.timestampMicros, kind: .scroll, axis: axis, delta: scaledDelta, transformed: transformed)
+    }
+
+    private func boundedRoundedDelta(_ delta: Int, multiplier: Double) -> Int {
+        let scaled = Double(delta) * multiplier
+        if scaled >= Double(Int.max) { return Int.max }
+        if scaled <= Double(Int.min) { return Int.min }
+        return Int(scaled.rounded())
     }
 
     private func isSecondaryLayerActive(_ profile: Profile) -> Bool {

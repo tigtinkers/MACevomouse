@@ -41,6 +41,12 @@ hardware and macOS claims.
 - **Why:** Current LinearMouse is active, Swift, MIT-licensed, and documents per-device schemes, app conditions, button debouncing, and scroll controls. It may be a valuable M2 baseline, but it does not establish VMD six-control or source-specific suppression support. A fork now would create maintenance and licensing obligations before the feasibility gate.
 - **License:** No LinearMouse or Mac Mouse Fix source was incorporated.
 
+## D-007 — Ignore late events conservatively
+
+- **Status:** CONFIRMED (synthetic rule).
+- **Decision:** Reject a host event whose timestamp is older than the last accepted event, emitting a diagnostic intent without changing held-button state.
+- **Why:** Applying a late press/release or scroll can fabricate a chord, resurrect a released button, or leave a mapping latched. A native adapter must deliver a monotonic, per-selected-device stream and separately surface any ordering failure.
+
 ## M2 decision gate
 
 Choose configure/extend LinearMouse, contribute upstream, or continue the standalone native adapter only after the Mac action matrix proves selected-device identity, all relevant collections, lower-thumb behavior, native-axis behavior, and safe suppression without impacting other mice.

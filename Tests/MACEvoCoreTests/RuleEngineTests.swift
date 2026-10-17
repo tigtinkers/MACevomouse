@@ -85,6 +85,28 @@ final class RuleEngineTests: XCTestCase {
         XCTAssertEqual(recovered.last?.transformed, false)
     }
 
+    func testLateEventIsIgnoredRatherThanCreatingAFalseChord() throws {
+        var engine = try RuleEngine(configuration: configuration())
+        _ = try engine.process(button(.lowerThumb, .down, at: 20))
+        let late = try engine.process(scroll(.vertical, 3, at: 10))
+        XCTAssertEqual(late, [ActionIntent(timestampMicros: 10, kind: .diagnostic, value: "out-of-order-timestamp-ignored")])
+        let current = try engine.process(scroll(.vertical, 3, at: 30))
+        XCTAssertEqual(current.first?.axis, .horizontal)
+        XCTAssertEqual(current.first?.transformed, true)
+    }
+
+    func testScrollSignAndScalingAreIndependentPerAxis() throws {
+        let profile = Profile(
+            id: "selected-synthetic-device",
+            device: DeviceMatch(reference: "synthetic-vmd"),
+            thumbWheelBehavior: .preserveHostAxes,
+            scroll: ScrollOptions(verticalMultiplier: 0.5, horizontalMultiplier: 2, reverseVertical: true, reverseHorizontal: true)
+        )
+        var engine = try RuleEngine(configuration: configuration(profiles: [profile]))
+        XCTAssertEqual(try engine.process(scroll(.vertical, 4, at: 1)).first?.delta, -2)
+        XCTAssertEqual(try engine.process(scroll(.horizontal, 3, at: 2)).first?.delta, -6)
+    }
+
     func testApplicationProfileTakesPriorityAndClearsHeldChord() throws {
         let base = Profile(id: "base", device: DeviceMatch(reference: "synthetic-vmd"), secondaryLayerControl: .lowerThumb, thumbWheelBehavior: .convertVerticalToHorizontal)
         let browser = Profile(
@@ -136,6 +158,9 @@ final class RuleEngineTests: XCTestCase {
         XCTAssertNoThrow(try configuration().validate())
         var malformed = configuration()
         malformed.schemaVersion = 2
+        XCTAssertThrowsError(try malformed.validate())
+        malformed = configuration()
+        malformed.profiles[0].scroll.verticalMultiplier = .infinity
         XCTAssertThrowsError(try malformed.validate())
         let incomplete = InputEvent(timestampMicros: 1, device: device, kind: .hostScroll)
         XCTAssertThrowsError(try incomplete.validate())
