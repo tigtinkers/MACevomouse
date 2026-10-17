@@ -2,7 +2,7 @@
 
 A community-oriented, Evoluent-specific macOS mouse customization project, initially targeting the **Evoluent VerticalMouse D (VMD) connected by USB**.
 
-**Status (October 2026): Research and pre-implementation. No physical VMD HID traces or macOS driver behavior have yet been verified.**
+**Status (October 2026): Milestone 1 portable Swift core and synthetic replay are implemented. No physical VMD HID traces or macOS driver behavior have been verified.**
 
 ## Goal
 
@@ -36,6 +36,64 @@ Do **not** claim Linux validation proves anything about macOS HID behavior. Do *
 ## Definition of early success
 
 A reproducible `swift build` / `swift test` (or documented justified alternative) on Linux; well-tested event/chord/profile/scroll logic; redacted sample fixtures; a usable fixture-replay CLI; and Mac-specific integration seams without pretending to have seen actual VMD hardware reports.
+
+## Milestone 1: build and replay
+
+The Swift package deliberately contains only Foundation-based model, configuration,
+rule, fixture-replay, and CLI code. It contains no IOKit, AppKit, SwiftUI, event
+tap, event injection, device seize, firmware, or privileged code.
+
+On a machine with Swift 5.9 or newer:
+
+```bash
+swift build --build-tests
+swift test
+swift run macevo-cli validate Fixtures/synthetic-vmd-demo.json
+swift run macevo-cli replay Fixtures/synthetic-vmd-demo.json
+```
+
+`macevo-cli replay` emits one JSON action *intent* per line. It does not post a
+mouse, keyboard, scroll, or system event. The included fixture is marked
+`source: "synthetic"`, uses abstract physical-location labels, and is not a VMD
+capture. The CLI rejects non-synthetic fixture sources so it cannot be mistaken
+for a hardware collector.
+
+Linux CI installs Swift and runs those commands on every pull request and push to
+`main`. This development workstation currently has neither Swift nor Docker, so
+local build/test results must not be inferred from the presence of source files;
+see `docs/HID_FINDINGS.md` for the exact local evidence.
+
+## Fixture and configuration format
+
+`Fixtures/synthetic-vmd-demo.json` is the executable format example. A fixture
+contains a version, required label/source, a versioned configuration, and ordered
+events. Its `raw-hid` records carry report/usage/value data separately from
+`host-button` and `host-scroll` records. A raw usage is logged as an observation,
+never silently interpreted as one of the six labels.
+
+`DeviceIdentity.reference` is a redacted logical adapter reference. VID/PID are
+optional numeric fields and must remain absent until a physical descriptor is
+observed. Profiles select an explicit device match, optional application bundle
+IDs, mappings, an optional secondary-layer control, scroll options, and a
+thumb-wheel policy. `convert-vertical-to-horizontal` is a **synthetic software
+policy**, not a claim that lower thumb produces a readable VMD event. Native
+horizontal input is always preserved rather than transformed a second time.
+
+## First Mac session
+
+1. Record `sw_vers`, `xcodebuild -version`, `hidutil list`, and a redacted
+   before/after `system_profiler SPUSBDataType` comparison.
+2. Build a passive, selected-device `IOHIDManager` inspector; record raw values,
+   interfaces, report IDs, and translated host events in separate files.
+3. Run the labelled T01–T14 physical action matrix in
+   `docs/HARDWARE_DIAGNOSTICS.md`, including lower-thumb + wheel and reconnect.
+4. Confirm source attribution and original-event suppression feasibility before
+   enabling any remap. Add a one-click disable and pass-through fallback first.
+5. Only then add isolated macOS targets for SwiftUI, IOKit/CoreHID, active-app
+   observation, and carefully permission-gated event handling.
+
+The full evidence and safety checklist is maintained in
+`docs/HID_FINDINGS.md`; architecture choices are in `docs/DECISIONS.md`.
 
 ## Attribution
 

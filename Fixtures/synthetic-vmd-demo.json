@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "label": "SYNTHETIC ONLY: abstract lower-thumb wheel conversion and application profile",
+  "source": "synthetic",
+  "configuration": {
+    "schemaVersion": 1,
+    "settings": {
+      "staleHoldTimeoutMicros": 2000000
+    },
+    "profiles": [
+      {
+        "id": "synthetic-default",
+        "priority": 0,
+        "device": { "reference": "synthetic-vmd" },
+        "applicationBundleIDs": [],
+        "secondaryLayerControl": "lowerThumb",
+        "thumbWheelBehavior": "convert-vertical-to-horizontal",
+        "scroll": {
+          "verticalMultiplier": 1,
+          "horizontalMultiplier": 1,
+          "reverseVertical": false,
+          "reverseHorizontal": false
+        },
+        "mappings": [
+          {
+            "control": "upperThumb",
+            "phase": "down",
+            "layer": "primary",
+            "action": { "kind": "shortcut", "value": "command+left" }
+          },
+          {
+            "control": "wheelClick",
+            "phase": "down",
+            "layer": "secondary",
+            "action": { "kind": "system-action", "value": "mission-control" }
+          }
+        ]
+      },
+      {
+        "id": "synthetic-browser",
+        "priority": 10,
+        "device": { "reference": "synthetic-vmd" },
+        "applicationBundleIDs": ["com.example.browser"],
+        "secondaryLayerControl": "lowerThumb",
+        "thumbWheelBehavior": "preserve-host-axes",
+        "scroll": {
+          "verticalMultiplier": 2,
+          "horizontalMultiplier": 1,
+          "reverseVertical": false,
+          "reverseHorizontal": false
+        },
+        "mappings": []
+      }
+    ]
+  },
+  "events": [
+    {
+      "source": "synthetic",
+      "timestampMicros": 1000,
+      "device": { "reference": "synthetic-vmd" },
+      "interface": "synthetic-host-input",
+      "kind": "host-scroll",
+      "axis": "vertical",
+      "delta": 3
+    },
+    {
+      "source": "synthetic",
+      "timestampMicros": 2000,
+      "device": { "reference": "synthetic-vmd" },
+      "interface": "synthetic-host-input",
+      "kind": "host-button",
+      "control": "lowerThumb",
+      "phase": "down"
+    },
+    {
+      "source": "synthetic",
+      "timestampMicros": 2100,
+      "device": { "reference": "synthetic-vmd" },
+      "interface": "synthetic-host-input",
+      "kind": "host-scroll",
+      "axis": "vertical",
+      "delta": -2
+    },
+    {
+      "source": "synthetic",
+      "timestampMicros": 2200,
+      "device": { "reference": "synthetic-vmd" },
+      "interface": "synthetic-host-input",
+      "kind": "host-scroll",
+      "axis": "horizontal",
+      "delta": 4
+    },
+    {
+      "source": "synthetic",
+      "timestampMicros": 2300,
+      "device": { "reference": "synthetic-vmd" },
+      "interface": "synthetic-host-input",
+      "kind": "host-button",
+      "control": "lowerThumb",
+      "phase": "up"
+    },
+    {
+      "source": "synthetic",
+      "timestampMicros": 2400,
+      "device": { "reference": "synthetic-vmd" },
+      "interface": "synthetic-host-input",
+      "kind": "application-activated",
+      "applicationBundleID": "com.example.browser"
+    },
+    {
+      "source": "synthetic",
+      "timestampMicros": 2500,
+      "device": { "reference": "synthetic-vmd" },
+      "interface": "synthetic-host-input",
+      "kind": "host-scroll",
+      "axis": "vertical",
+      "delta": 3
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+name: Swift core
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.0"
+      - run: swift --version
+      - run: swift build --build-tests
+      - run: swift test
+      - run: swift run macevo-cli validate Fixtures/synthetic-vmd-demo.json
+      - run: swift run macevo-cli replay Fixtures/synthetic-vmd-demo.json
