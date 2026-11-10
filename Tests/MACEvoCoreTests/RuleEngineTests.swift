@@ -165,4 +165,79 @@ final class RuleEngineTests: XCTestCase {
         let incomplete = InputEvent(timestampMicros: 1, device: device, kind: .hostScroll)
         XCTAssertThrowsError(try incomplete.validate())
     }
+    func testLayerChangeDoesNotChangePairedRelease() throws {
+        let profile = Profile(id: "p", device: DeviceMatch(reference: "synthetic-vmd"), secondaryLayerControl: .lowerThumb,
+            mappings: [ButtonMapping(control: .wheelClick, phase: .down, layer: .secondary, action: MappingAction(kind: .systemAction, value: "mission-control"))])
+        var engine = try RuleEngine(configuration: configuration(profiles: [profile]))
+        _ = try engine.process(button(.wheelClick, .down, at: 1))
+        _ = try engine.process(button(.lowerThumb, .down, at: 2))
+        let release = try engine.process(button(.wheelClick, .up, at: 3))
+        XCTAssertEqual(release.first?.kind, .passThroughButton)
+        XCTAssertEqual(release.first?.phase, .up)
+    }
+
+    func testOneShotMappingDoesNotEmitUnmatchedRelease() throws {
+        let profile = Profile(id: "p", device: DeviceMatch(reference: "synthetic-vmd"), mappings: [ButtonMapping(control: .upperThumb, phase: .down, action: MappingAction(kind: .shortcut, value: "command+left"))])
+        var engine = try RuleEngine(configuration: configuration(profiles: [profile]))
+        XCTAssertEqual(try engine.process(button(.upperThumb, .down, at: 1)).first?.kind, .shortcut)
+        XCTAssertTrue(try engine.process(button(.upperThumb, .up, at: 2)).isEmpty)
+    }
+
+    func testOtherDeviceCannotAdvanceClockOrRecoverHold() throws {
+        let second = Profile(id: "other", device: DeviceMatch(reference: "other"))
+        let first = Profile(id: "first", device: DeviceMatch(reference: "synthetic-vmd"), thumbWheelBehavior: .convertVerticalToHorizontal)
+        var engine = try RuleEngine(configuration: configuration(timeout: 10, profiles: [first, second]))
+        _ = try engine.process(button(.lowerThumb, .down, at: 1))
+        let other = InputEvent(timestampMicros: 100, device: DeviceIdentity(reference: "other"), kind: .hostScroll, axis: .vertical, delta: 1)
+        XCTAssertEqual(try engine.process(other).first?.value, "ignored-unselected-device")
+        XCTAssertEqual(try engine.process(scroll(.vertical, 1, at: 2)).first?.axis, .horizontal)
+    }
+
+    func testDisconnectResetsAndAllowsAnotherSelectedDevice() throws {
+        let other = Profile(id: "other", device: DeviceMatch(reference: "other"))
+        let first = Profile(id: "first", device: DeviceMatch(reference: "synthetic-vmd"))
+        var engine = try RuleEngine(configuration: configuration(profiles: [first, other]))
+        _ = try engine.process(button(.lowerThumb, .down, at: 1))
+        XCTAssertEqual(try engine.process(InputEvent(timestampMicros: 2, device: device, kind: .deviceDisconnected)).last?.kind, .reset)
+        XCTAssertTrue(engine.heldControlSnapshot.isEmpty)
+        let event = InputEvent(timestampMicros: 1, device: DeviceIdentity(reference: "other"), kind: .hostScroll, axis: .vertical, delta: 1)
+        XCTAssertEqual(try engine.process(event).last?.kind, .scroll)
+    }
+
+    func testUnrestrictedAndDuplicateMappingsRejected() throws {
+        XCTAssertThrowsError(try MACEvoConfiguration(profiles: [Profile(id: "all")]).validate())
+        let mapping = ButtonMapping(control: .upperThumb, phase: .down, action: MappingAction(kind: .passThrough))
+        let profile = Profile(id: "p", device: DeviceMatch(reference: "selected"), mappings: [mapping, mapping])
+        XCTAssertThrowsError(try MACEvoConfiguration(profiles: [profile]).validate())
+    }
+
+    func testDefaultSettingsPreserveLongHold() throws {
+        let profile = Profile(id: "p", device: DeviceMatch(reference: "synthetic-vmd"), thumbWheelBehavior: .convertVerticalToHorizontal)
+        var engine = try RuleEngine(configuration: MACEvoConfiguration(profiles: [profile]))
+        _ = try engine.process(button(.lowerThumb, .down, at: 1))
+        XCTAssertEqual(try engine.process(scroll(.vertical, 1, at: 60_000_000)).last?.axis, .horizontal)
+        XCTAssertEqual(try engine.process(button(.lowerThumb, .up, at: 60_000_001)).last?.phase, .up)
+    }
+
+    func testSimulationIsDisabledByDefaultAndResetsOnDisable() throws {
+        var session = try SimulationSession(configuration: configuration())
+        XCTAssertTrue(try session.process(button(.lowerThumb, .down, at: 1)).isEmpty)
+        session.enable()
+        XCTAssertEqual(try session.process(button(.lowerThumb, .down, at: 2)).first?.phase, .down)
+        XCTAssertEqual(session.disable(at: 3).first?.value, "simulation-disabled")
+        XCTAssertTrue(session.disable(at: 4).isEmpty)
+        session.enable()
+        XCTAssertEqual(try session.process(scroll(.vertical, 1, at: 5)).last?.axis, .vertical)
+        let physical = InputEvent(source: .physicalMacOS, timestampMicros: 6, device: device, kind: .hostScroll, axis: .vertical, delta: 1)
+        XCTAssertThrowsError(try session.process(physical))
+    }
+
+    func testDisconnectAfterSwitchToUnmatchedAppStillResets() throws {
+        let profile = Profile(id: "app", device: DeviceMatch(reference: "synthetic-vmd"), applicationBundleIDs: ["app.one"])
+        var engine = try RuleEngine(configuration: configuration(profiles: [profile]), activeApplicationBundleID: "app.one")
+        _ = try engine.process(button(.lowerThumb, .down, at: 1))
+        _ = try engine.process(InputEvent(timestampMicros: 2, device: device, kind: .applicationActivated, applicationBundleID: "app.two"))
+        XCTAssertEqual(try engine.process(InputEvent(timestampMicros: 3, device: device, kind: .deviceDisconnected)).last?.value, "device-disconnected")
+    }
+
 }

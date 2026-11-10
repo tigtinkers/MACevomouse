@@ -50,3 +50,25 @@ hardware and macOS claims.
 ## M2 decision gate
 
 Choose configure/extend LinearMouse, contribute upstream, or continue the standalone native adapter only after the Mac action matrix proves selected-device identity, all relevant collections, lower-thumb behavior, native-axis behavior, and safe suppression without impacting other mice.
+
+## D-008 — Mac passive preparation
+
+- **CONFIRMED:** The portable engine binds to the first matching logical device until disconnect; profiles require a nonempty device reference. Passthrough releases follow their press and one-shot actions do not emit an unmatched release. Reset intents require an eventual adapter to release owned outputs. Up-phase mappings are rejected.
+- **CONFIRMED:** A macOS-only experimental inspector enumerates HID devices and offers a bounded, selected-interface raw capture; it has no event tap or injection.
+- **UNKNOWN:** Device enumeration, capture permissions, hotplug and VMD reports on physical hardware; translated-event attribution and suppression remain unproven.
+- **CONFIRMED:** Timeout is disabled by default (`0`); nonzero values remain available for synthetic experiments and may interrupt a valid hold. No adapter currently consumes reset intents.
+- **CONFIRMED:** A disabled-by-default synthetic session rejects physical input and emits a reset on disable; it is not a live event adapter.
+
+## D-009 — Exact sender attribution for the wheel-click experiment
+
+- **CONFIRMED (source review):** Reviewed LinearMouse commit `93d38f1981427fde98ceca105c794dae32c58b7e`; it obtains HID sender IDs from CGEvents through undocumented `CGEventCopyIOHIDEvent` and `IOHIDEventGetSenderID`. See `ThirdParty/README.md` for pinned sources and MIT notice.
+- **Decision:** Keep our independent adapter, dynamically resolve the two optional symbols in a small macOS-only C boundary, and require a nonzero sender ID exactly equal to the explicitly selected interface's registry entry ID. Never use timing guesses or last-active-device fallback. Missing symbols or mismatched identity means no interception.
+- **CONFIRMED (source/build):** The functions resolve on this host. A bounded listen-only probe precedes an explicitly enabled wheel-click experiment. Only host button 4 is eligible; keyboard output is a complete one-shot pair. Native scrolling and other controls are not intercepted.
+- **UNKNOWN:** Actual sender matching, suppression, permissions, output delivery, hotplug/session recovery and second-device isolation on this hardware. Symbol presence and mocks do not establish compatibility.
+- **Decision:** The extra native bridge is justified by M3 source attribution needs; the portable M1 core remains Foundation-only and has no native imports or FFI. Full button remapping stays deferred until this wheel-click experiment passes.
+
+## D-010 — Saved shortcut MVP
+
+- **CONFIRMED (automated tests):** Canonical typed shortcuts, validated atomic profile storage, lossless supported legacy-string migration, synthetic routing isolation and tagged keyboard pair construction are tested. Failed validation never overwrites the saved profile.
+- **Decision:** Store a separate versioned shortcut profile for observed VID/PID 6780:401. Preserve lower thumb's native chord. Dictation is a user-confirmed configured shortcut, not a hardcoded Fn behavior or a direct dictation API.
+- **UNKNOWN:** The complete physical model, future device variants, actual Dictation operation and all runtime remapping acceptance cases.

@@ -2,7 +2,7 @@
 
 A community-oriented, Evoluent-specific macOS mouse customization project, initially targeting the **Evoluent VerticalMouse D (VMD) connected by USB**.
 
-**Status (October 2026): Milestone 1 portable Swift core and synthetic replay are implemented. No physical VMD HID traces or macOS driver behavior have been verified.**
+**Status (November 9, 2026): Six physical button usages and both native scroll paths have been observed on a mouse reporting “Evoluent VerticalMouse 4” (6780:401). Saved shortcut editing and an experimental wheel-click adapter are implemented; live routing and suppression require the next physical test.**
 
 ## Goal
 
@@ -10,9 +10,9 @@ Restore and extend functionality that Evoluent's discontinued Mac Mouse Manager 
 
 The product target is a **native macOS configuration app and user-space input service**, not necessarily a kernel or DriverKit driver. The built-in macOS USB HID mouse stack already handles basic pointing.
 
-## Crucial development constraint: Linux first, macOS later
+## Development history: Linux first
 
-The current developer machine is **Linux**. We **cannot locally run Xcode, SwiftUI, IOKit, or macOS input-event integration** on Linux. The eventual test machine will be a Mac with the physical Evoluent mouse.
+The original M1 development machine was Linux. The project is now being prepared on a Mac; the connected mouse has reported a different product name, with user-labeled HID observations recorded in the findings log. Linux remains a supported platform for the portable core.
 
 Build **portable, testable foundations now**, and introduce the macOS hardware adapter when a Mac becomes available:
 
@@ -58,10 +58,7 @@ mouse, keyboard, scroll, or system event. The included fixture is marked
 capture. The CLI rejects non-synthetic fixture sources so it cannot be mistaken
 for a hardware collector.
 
-Linux CI installs Swift and runs those commands on every pull request and push to
-`main`. This development workstation currently has neither Swift nor Docker, so
-local build/test results must not be inferred from the presence of source files;
-see `docs/HID_FINDINGS.md` for the exact local evidence.
+Linux CI installs Swift and runs those commands on every pull request and push to `main`. A macOS CI job builds and tests the native target. The historical Linux inventory is recorded in `docs/HID_FINDINGS.md`.
 
 ## Fixture and configuration format
 
@@ -78,6 +75,22 @@ IDs, mappings, an optional secondary-layer control, scroll options, and a
 thumb-wheel policy. `convert-vertical-to-horizontal` is a **synthetic software
 policy**, not a claim that lower thumb produces a readable VMD event. Native
 horizontal input is always preserved rather than transformed a second time.
+
+## Local shortcut app
+
+Build the local app with `Scripts/build-app.sh`, then open `.build/MACevomouse.app`. The **Assignments** tab saves validated shortcuts and offers a focused recorder and a user-confirmed Dictation shortcut label. Lower thumb stays reserved for native scrolling. Only wheel click has an experimental live path: it requires a successful selected-device probe and explicit enablement, and starts disabled at launch. Other assignments are saved but not executed yet.
+
+Follow [the MVP testing guide](docs/MVP_TESTING.md) for permissions, the harmless first shortcut, disable/recovery tests, known limitations and profile storage. No live remapping was activated during automated testing. The optional attribution functions are undocumented macOS APIs, isolated behind runtime capability checks; see [upstream review and attribution](ThirdParty/README.md).
+
+## Passive Mac inspector (experimental)
+
+On macOS with Swift and Xcode installed, run `swift run macevo-inspector`. Refresh the device list, explicitly select the intended HID interface, then start a raw-value capture. A three-second countdown precedes the ten-second capture; wait for “Recording” before acting. Stop at any time and use Copy Results to share the output. Pointer X/Y movement is hidden by default and can be included when needed. Values are displayed in memory only, limited to generic-desktop and button usage pages, with no serial numbers. Do not select a keyboard or type during capture. An interface may be missing or inaccessible; this tool does not establish VMD identity or capture translated host events. It does not seize devices, suppress input or inject events. Physical testing, permissions, hotplug behavior and device attribution remain unverified.
+
+The **Assignment preview** tab is an in-memory mockup for the six unconfirmed control labels. Select a control, choose a default, keyboard chord, Mac action, or disabled assignment, and use the simulation buttons to see intents from the real portable rule engine. A lower-thumb secondary layer and wheel chord can also be explored. Shortcut text is not validated or recorded from keys, changes are not saved, and no action is sent to macOS. This preview does not prove that a physical button is observable or programmable.
+
+Before the first physical session, connect a second pointing device if available, run `hidutil list`, connect the VMD and compare the list, then select only the identified VMD interface in **Hardware trials**. Choose one labeled trial and capture a short window. New captures show relative microseconds using the platform timebase and exclude values older than capture start. **Export JSON** saves a redacted diagnostic document; host attribution probes remain separate. Repeat for each relevant interface and the T01–T14 matrix in `docs/HARDWARE_DIAGNOSTICS.md`. Keyboard usages and consumer usages other than AC Pan (page 12, usage 568) are intentionally excluded from this capture, so absence of a value is inconclusive. The experimental wheel-click adapter uses exact sender matching and disables on device removal; the raw inspector still refreshes its device list manually.
+
+The simulator now requires a nonempty logical device reference on every profile. Button mappings are down-phase only: shortcuts and system actions are one-shot, while passthrough ups follow their downs. Reset intents mean an eventual adapter must release any outputs it owns. The default stale-hold timeout is disabled (`0`) so legitimate long holds remain active. A nonzero timeout is an explicit synthetic recovery option and can interrupt a valid hold. Existing fixtures retain their configured behavior. The `SimulationSession` is disabled by default, accepts synthetic events only, and returns a reset intent when disabled.
 
 ## First Mac session
 
