@@ -5,6 +5,8 @@ public struct RuleEngine: Sendable {
     public private(set) var activeApplicationBundleID: String?
     private var heldControls: [Control: UInt64] = [:]
     private var lastTimestampMicros: UInt64?
+    private var selectedDeviceReference: String?
+    private var releaseIntents: [Control: ActionIntent] = [:]
 
     public init(configuration: MACEvoConfiguration, activeApplicationBundleID: String? = nil) throws {
         try configuration.validate()
@@ -14,8 +16,27 @@ public struct RuleEngine: Sendable {
 
     public var heldControlSnapshot: Set<Control> { Set(heldControls.keys) }
 
+    /// Signal that all outputs owned by an adapter must be released immediately.
+    public mutating func reset(at timestampMicros: UInt64, reason: String) -> ActionIntent {
+        heldControls.removeAll()
+        releaseIntents.removeAll()
+        selectedDeviceReference = nil
+        lastTimestampMicros = nil
+        return ActionIntent(timestampMicros: timestampMicros, kind: .reset, value: reason)
+    }
+
     public mutating func process(_ event: InputEvent) throws -> [ActionIntent] {
         try event.validate()
+        if event.kind != .applicationActivated {
+            guard (event.kind == .deviceDisconnected && selectedDeviceReference == event.device.reference)
+                    || selectedProfile(for: event.device) != nil else {
+                return [diagnostic(event, "ignored-unselected-device")]
+            }
+            if let selectedDeviceReference, selectedDeviceReference != event.device.reference {
+                return [diagnostic(event, "ignored-unselected-device")]
+            }
+            selectedDeviceReference = event.device.reference
+        }
         if let lastTimestampMicros, event.timestampMicros < lastTimestampMicros {
             // Applying late state transitions can create a false chord or leave a
             // button latched. Future adapters should provide a monotonic stream;
@@ -29,12 +50,17 @@ public struct RuleEngine: Sendable {
             let next = event.applicationBundleID!
             if next != activeApplicationBundleID, !heldControls.isEmpty {
                 heldControls.removeAll()
+                releaseIntents.removeAll()
                 intents.append(ActionIntent(timestampMicros: event.timestampMicros, kind: .reset, value: "application-profile-changed"))
             }
             activeApplicationBundleID = next
             return intents
         }
 
+        if event.kind == .deviceDisconnected {
+            intents.append(reset(at: event.timestampMicros, reason: "device-disconnected"))
+            return intents
+        }
         guard let profile = selectedProfile(for: event.device) else {
             intents.append(diagnostic(event, "ignored-unselected-device"))
             return intents
@@ -48,8 +74,7 @@ public struct RuleEngine: Sendable {
         case .hostScroll:
             intents.append(processScroll(event, profile: profile))
         case .deviceDisconnected:
-            if !heldControls.isEmpty { heldControls.removeAll() }
-            intents.append(ActionIntent(timestampMicros: event.timestampMicros, kind: .reset, value: "device-disconnected"))
+            break
         case .applicationActivated:
             break
         }
@@ -69,20 +94,27 @@ public struct RuleEngine: Sendable {
         switch phase {
         case .down:
             guard heldControls[control] == nil else { return [diagnostic(event, "duplicate-button-down")] }
+            let layer: MappingLayer = isSecondaryLayerActive(profile) ? .secondary : .primary
             heldControls[control] = event.timestampMicros
-            return intentForButton(event, profile: profile)
+            let down = intentForButton(event, profile: profile, layer: layer)
+            // Only passthrough represents an output held across both phases.
+            // Shortcut and system actions are one-shot; never emit an unmatched up.
+            if down.first?.kind == .passThroughButton {
+                releaseIntents[control] = ActionIntent(timestampMicros: event.timestampMicros, kind: .passThroughButton, control: control, phase: .up)
+            }
+            return down
         case .up:
             guard heldControls[control] != nil else { return [diagnostic(event, "button-up-without-down")] }
-            let intents = intentForButton(event, profile: profile)
             heldControls.removeValue(forKey: control)
-            return intents
+            guard var release = releaseIntents.removeValue(forKey: control) else { return [] }
+            release.timestampMicros = event.timestampMicros
+            return [release]
         }
     }
 
-    private func intentForButton(_ event: InputEvent, profile: Profile) -> [ActionIntent] {
+    private func intentForButton(_ event: InputEvent, profile: Profile, layer: MappingLayer) -> [ActionIntent] {
         let control = event.control!
         let phase = event.phase!
-        let layer: MappingLayer = isSecondaryLayerActive(profile) ? .secondary : .primary
         let action = profile.mappings.first { $0.control == control && $0.phase == phase && $0.layer == layer }?.action
             ?? MappingAction(kind: .passThrough)
         switch action.kind {
@@ -124,10 +156,12 @@ public struct RuleEngine: Sendable {
 
     private mutating func recoverStaleHolds(at timestamp: UInt64) -> [ActionIntent] {
         let timeout = configuration.settings.staleHoldTimeoutMicros
+        guard timeout > 0 else { return [] }
         let stale = heldControls.filter { timestamp >= $0.value && timestamp - $0.value > timeout }.map(\.key)
         guard !stale.isEmpty else { return [] }
-        for control in stale { heldControls.removeValue(forKey: control) }
-        return stale.map {
+        for control in stale { heldControls.removeValue(forKey: control); releaseIntents.removeValue(forKey: control) }
+        let reset = ActionIntent(timestampMicros: timestamp, kind: .reset, value: "recovered-missing-release")
+        return [reset] + stale.sorted { $0.rawValue < $1.rawValue }.map {
             ActionIntent(timestampMicros: timestamp, kind: .diagnostic, control: $0, value: "recovered-missing-release")
         }
     }

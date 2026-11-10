@@ -241,7 +241,7 @@ public struct Profile: Codable, Equatable, Sendable {
 public struct EngineSettings: Codable, Equatable, Sendable {
     public var staleHoldTimeoutMicros: UInt64
 
-    public init(staleHoldTimeoutMicros: UInt64 = 2_000_000) {
+    public init(staleHoldTimeoutMicros: UInt64 = 0) {
         self.staleHoldTimeoutMicros = staleHoldTimeoutMicros
     }
 }
@@ -262,14 +262,23 @@ public struct MACEvoConfiguration: Codable, Equatable, Sendable {
         guard schemaVersion == Self.currentSchemaVersion else {
             throw ConfigurationError.unsupportedSchemaVersion(schemaVersion)
         }
-        guard settings.staleHoldTimeoutMicros > 0 else {
-            throw ConfigurationError.invalidConfiguration("staleHoldTimeoutMicros must be positive")
-        }
         let ids = profiles.map(\.id)
         guard Set(ids).count == ids.count, !ids.contains(where: { $0.isEmpty }) else {
             throw ConfigurationError.invalidConfiguration("profile ids must be present and unique")
         }
         for profile in profiles {
+            guard let device = profile.device, device.reference?.isEmpty == false else {
+                throw ConfigurationError.invalidConfiguration("each profile requires a non-empty selected device reference")
+            }
+            var keys = Set<String>()
+            for mapping in profile.mappings {
+                guard mapping.phase == .down else { throw ConfigurationError.invalidConfiguration("up-phase mappings are not supported; release follows the down action") }
+                let key = "\(mapping.control.rawValue):\(mapping.phase.rawValue):\(mapping.layer.rawValue)"
+                guard keys.insert(key).inserted else { throw ConfigurationError.invalidConfiguration("duplicate button mapping") }
+                if mapping.action.kind == .shortcut || mapping.action.kind == .systemAction {
+                    guard mapping.action.value?.isEmpty == false else { throw ConfigurationError.invalidConfiguration("action value is required") }
+                }
+            }
             guard profile.scroll.verticalMultiplier.isFinite,
                   profile.scroll.horizontalMultiplier.isFinite,
                   profile.scroll.verticalMultiplier >= 0,
